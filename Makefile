@@ -2,7 +2,7 @@ CXX = riscv64-unknown-elf-g++
 CXXFLAGS = -march=rv64g -mabi=lp64 -mcmodel=medany -ffreestanding -nostdlib \
            -fno-exceptions -fno-rtti -O0 -g
 
-SRCS = src/boot.S src/startup.cpp src/uart.cpp src/print.cpp src/main.cpp
+SRCS = src/boot.S src/trap.S src/startup.cpp src/uart.cpp src/print.cpp src/trap.cpp src/main.cpp
 
 kernel: $(SRCS) linker.ld
 	$(CXX) $(CXXFLAGS) -T linker.ld $(SRCS) -o kernel.elf

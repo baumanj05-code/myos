@@ -3,6 +3,7 @@
 _start:
     la sp, stack_top       # set up stack pointer
     call __init_cpp        # call global constructors
+    call trap_init         # set up mtvec
     call main
 halt:
     j halt                 # loop forever
