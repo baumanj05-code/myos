@@ -24,20 +24,20 @@ static const char *exception_names[] = {
 
 static const char *interrupt_names[] = {
     nullptr, nullptr, nullptr,
-    "Machine software interrupt",      // 3
+    "Supervisor software interrupt",   // 3
     nullptr, nullptr, nullptr,
-    "Machine timer interrupt",         // 7
+    "Supervisor timer interrupt",      // 7
     nullptr, nullptr, nullptr,
-    "Machine external interrupt",      // 11
+    "Supervisor external interrupt",   // 11
 };
 
 extern "C" void trap_handler(TrapFrame *frame) {
-    unsigned long mcause, mtval;
-    asm volatile("csrr %0, mcause" : "=r"(mcause));
-    asm volatile("csrr %0, mtval"  : "=r"(mtval));
+    unsigned long scause, stval;
+    asm volatile("csrr %0, scause" : "=r"(scause));
+    asm volatile("csrr %0, stval"  : "=r"(stval));
 
-    bool is_interrupt = mcause >> 63;
-    unsigned long code = mcause & ~(1UL << 63);
+    bool is_interrupt = scause >> 63;
+    unsigned long code = scause & ~(1UL << 63);
 
     kprintf("\n--- TRAP ---\n");
 
@@ -51,14 +51,14 @@ extern "C" void trap_handler(TrapFrame *frame) {
         kprintf("Exception: %s (code %d)\n", name, (int)code);
     }
 
-    kprintf("mepc:  0x%x\n", (unsigned int)frame->pc);
-    kprintf("mtval: 0x%x\n", (unsigned int)mtval);
+    kprintf("sepc:  0x%x\n", (unsigned int)frame->pc);
+    kprintf("stval: 0x%x\n", (unsigned int)stval);
 
     while (1) {}
 }
 
 extern "C" void trap_init() {
     unsigned long addr = (unsigned long)trap_entry;
-    // write handler address to mtvec, direct mode (low 2 bits = 0)
-    asm volatile("csrw mtvec, %0" :: "r"(addr));
+    // write handler address to stvec, direct mode (low 2 bits = 0)
+    asm volatile("csrw stvec, %0" :: "r"(addr));
 }

@@ -43,17 +43,17 @@ trap_entry:
     sd x30, 30*8(sp)
     sd x31, 31*8(sp)
 
-    # Save mepc
-    csrr t0, mepc
+    # Save sepc
+    csrr t0, sepc
     sd t0, 32*8(sp)
 
     # Call C++ handler with pointer to TrapFrame
     mv a0, sp
     call trap_handler
 
-    # Restore mepc (handler may advance it to skip an instruction)
+    # Restore sepc (handler may advance it to skip an instruction)
     ld t0, 32*8(sp)
-    csrw mepc, t0
+    csrw sepc, t0
 
     # Restore all registers except sp
     ld x1,   1*8(sp)
@@ -90,4 +90,4 @@ trap_entry:
     # Reclaim frame (restores sp to original value)
     addi sp, sp, 33*8
 
-    mret
+    sret
