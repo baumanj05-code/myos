@@ -11,4 +11,7 @@ SECTIONS {
     }
     .data : { *(.data) }
     .bss  : { *(.bss)  }
+
+    . = ALIGN(4096);    /* round up to page boundary */
+    _kernel_end = .;    /* first address after the kernel */
 }
