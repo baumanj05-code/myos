@@ -1,5 +1,6 @@
 #include "trap.h"
 #include "print.h"
+#include "syscall.h"
 
 extern "C" void trap_entry();
 
@@ -39,8 +40,15 @@ extern "C" void trap_handler(TrapFrame *frame) {
     bool is_interrupt = scause >> 63;
     unsigned long code = scause & ~(1UL << 63);
 
-    kprintf("\n--- TRAP ---\n");
+    if (!is_interrupt && code == 8) {
+        // U-mode ecall — handle syscall and return
+        handle_syscall(frame);
+        frame->pc += 4;     // advance past ecall instruction
+        return;
+    }
 
+    // All other traps: print info and hang
+    kprintf("\n--- TRAP ---\n");
     if (is_interrupt) {
         const char *name = (code < 12 && interrupt_names[code])
                          ? interrupt_names[code] : "Unknown interrupt";
@@ -50,7 +58,6 @@ extern "C" void trap_handler(TrapFrame *frame) {
                          ? exception_names[code] : "Unknown exception";
         kprintf("Exception: %s (code %d)\n", name, (int)code);
     }
-
     kprintf("sepc:  0x%x\n", (unsigned int)frame->pc);
     kprintf("stval: 0x%x\n", (unsigned int)stval);
 
@@ -59,6 +66,5 @@ extern "C" void trap_handler(TrapFrame *frame) {
 
 extern "C" void trap_init() {
     unsigned long addr = (unsigned long)trap_entry;
-    // write handler address to stvec, direct mode (low 2 bits = 0)
     asm volatile("csrw stvec, %0" :: "r"(addr));
 }

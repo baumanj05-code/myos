@@ -11,8 +11,11 @@ constexpr unsigned long PTE_U = 1 << 4;  // User accessible
 using pte_t       = unsigned long;
 using pagetable_t = pte_t *;        // 512 PTEs per page table
 
-void vm_init();
-int  vm_map(pagetable_t pt, unsigned long va, unsigned long pa,
-            unsigned long size, unsigned long flags);
+void        vm_init();
+int         vm_map(pagetable_t pt, unsigned long va, unsigned long pa,
+                   unsigned long size, unsigned long flags);
+pagetable_t vm_create_user_pt();       // new page table with kernel mapped in upper half
+void        vm_switch(pagetable_t pt); // switch satp to given page table
+void        vm_free_user_pt(pagetable_t pt); // free all user pages and page table pages
 
 #endif

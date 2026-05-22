@@ -1,19 +1,45 @@
 .section .text
 .global trap_entry
-.align 4                        # mtvec requires 4-byte alignment
+.align 4
+
+# sscratch convention:
+#   0         = currently in kernel (S-mode)
+#   non-zero  = currently in user (U-mode), holds kernel stack top
 
 trap_entry:
-    # Allocate TrapFrame on the stack (32 regs + mepc = 33 slots * 8 bytes)
-    addi sp, sp, -(33 * 8)
+    # Atomically swap sp with sscratch.
+    # After swap: sp = old sscratch, sscratch = old sp
+    csrrw sp, sscratch, sp
+    bnez sp, from_user
 
-    # Save all registers
-    sd x0,   0*8(sp)
-    sd x1,   1*8(sp)
-    # x2 (sp): save original value (before frame allocation)
-    # save x5 (t0) first before we clobber it
+from_kernel:
+    # sscratch was 0 → came from kernel.
+    # sp = 0 (bad), sscratch = original kernel sp. Swap back.
+    csrrw sp, sscratch, sp      # sp = kernel sp, sscratch = 0
+    addi sp, sp, -(33 * 8)
+    # save x5 (t0) before using it
     sd x5,   5*8(sp)
+    # save x2 (sp): original = current sp + frame size
     addi t0, sp, 33*8
     sd t0,   2*8(sp)
+    j save_regs
+
+from_user:
+    # sscratch was kernel stack top → came from user.
+    # sp = kernel stack top, sscratch = user sp
+    addi sp, sp, -(33 * 8)
+    # save x5 (t0) before using it
+    sd x5,   5*8(sp)
+    # save x2 (sp): the user sp is in sscratch
+    csrr t0, sscratch
+    sd t0,   2*8(sp)
+    # clear sscratch — we're in kernel mode now
+    csrw sscratch, zero
+
+save_regs:
+    sd x0,   0*8(sp)
+    sd x1,   1*8(sp)
+    # x2 and x5 already saved
     sd x3,   3*8(sp)
     sd x4,   4*8(sp)
     sd x6,   6*8(sp)
@@ -43,23 +69,19 @@ trap_entry:
     sd x30, 30*8(sp)
     sd x31, 31*8(sp)
 
-    # Save sepc
     csrr t0, sepc
     sd t0, 32*8(sp)
 
-    # Call C++ handler with pointer to TrapFrame
     mv a0, sp
     call trap_handler
 
-    # Restore sepc (handler may advance it to skip an instruction)
     ld t0, 32*8(sp)
     csrw sepc, t0
 
-    # Restore all registers except sp
+    # Restore all registers except sp and t0 (x5) — handled below
     ld x1,   1*8(sp)
     ld x3,   3*8(sp)
     ld x4,   4*8(sp)
-    ld x5,   5*8(sp)
     ld x6,   6*8(sp)
     ld x7,   7*8(sp)
     ld x8,   8*8(sp)
@@ -87,7 +109,20 @@ trap_entry:
     ld x30, 30*8(sp)
     ld x31, 31*8(sp)
 
-    # Reclaim frame (restores sp to original value)
-    addi sp, sp, 33*8
+    # Check sstatus.SPP (bit 8): 1 = returning to S-mode, 0 = returning to U-mode
+    csrr t0, sstatus
+    andi t0, t0, (1 << 8)
+    bnez t0, to_kernel
 
+to_user:
+    # Restore sscratch = kernel stack top (for the next trap from user)
+    addi t0, sp, 33*8
+    csrw sscratch, t0
+    ld x5, 5*8(sp)           # restore t0
+    ld sp, 2*8(sp)           # restore user sp — must be last use of frame
+    sret
+
+to_kernel:
+    ld x5,  5*8(sp)          # restore t0
+    addi sp, sp, 33*8        # reclaim frame
     sret

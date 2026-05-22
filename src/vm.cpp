@@ -67,3 +67,56 @@ void vm_init() {
 
     kprintf("vm: Sv39 paging enabled\n");
 }
+
+// Create a user page table with kernel mapped in the upper half.
+// In Sv39, VPN[2] index 2 covers 0x80000000–0xBFFFFFFF (where our kernel lives).
+// Copying that entry gives user processes access to kernel mappings during traps.
+pagetable_t vm_create_user_pt() {
+    pagetable_t pt = (pagetable_t)pmem_alloc();
+    for (int i = 0; i < 512; i++) pt[i] = 0;
+    pt[2] = kernel_pt[2];   // share kernel's top-level PTE for 0x80000000+
+    // Map UART for kernel use during traps — no PTE_U so user code can't touch it
+    vm_map(pt, 0x10000000, 0x10000000, PAGE_SIZE, PTE_R | PTE_W);
+    return pt;
+}
+
+void vm_switch(pagetable_t pt) {
+    asm volatile("csrw satp, %0" :: "r"(MAKE_SATP((unsigned long)pt)));
+    asm volatile("sfence.vma zero, zero");
+}
+
+// Free all pages and page table pages belonging to a user process.
+//
+// Root level: skip index 2 (shared kernel entry — not ours to free).
+// Intermediate levels: free the page table pages themselves.
+// Leaf PTEs with PTE_U: free the physical page (user data/code/stack).
+// Leaf PTEs without PTE_U: hardware-mapped (e.g. UART) — don't free.
+void vm_free_user_pt(pagetable_t pt) {
+    for (int i = 0; i < 512; i++) {
+        if (i == 2) continue;               // skip shared kernel entry
+        if (!(pt[i] & PTE_V)) continue;
+
+        // level-2 non-leaf → points to a level-1 page table
+        pagetable_t pt1 = (pagetable_t)PTE_TO_PA(pt[i]);
+
+        for (int j = 0; j < 512; j++) {
+            if (!(pt1[j] & PTE_V)) continue;
+
+            // level-1 non-leaf → points to a level-0 page table
+            pagetable_t pt0 = (pagetable_t)PTE_TO_PA(pt1[j]);
+
+            for (int k = 0; k < 512; k++) {
+                if (!(pt0[k] & PTE_V)) continue;
+                // leaf PTE: only free physical page if it belongs to user
+                if (pt0[k] & PTE_U)
+                    pmem_free((void *)PTE_TO_PA(pt0[k]));
+            }
+
+            pmem_free(pt0);   // free level-0 page table
+        }
+
+        pmem_free(pt1);       // free level-1 page table
+    }
+
+    pmem_free(pt);            // free root page table
+}
